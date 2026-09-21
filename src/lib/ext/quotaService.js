@@ -159,10 +159,86 @@ export async function getAllAccountsQuota({ provider = null, status = null, forc
 }
 
 /**
- * Build consolidated summary across all accounts
+ * Aggregate account quotas into model/quota buckets
+ */
+export function aggregateByQuotaBuckets(accounts = []) {
+  const bucketMap = new Map();
+
+  for (const acc of accounts) {
+    if (acc.isActive === false) continue; // Skip disabled accounts
+    for (const q of acc.quotas || []) {
+      const bucketKey = q.name || "Default";
+      if (!bucketMap.has(bucketKey)) {
+        bucketMap.set(bucketKey, {
+          name: q.name,
+          modelKey: q.modelKey || null,
+          unit: q.unit || "tokens",
+          totalAccounts: 0,
+          availableAccounts: 0,
+          exhaustedAccounts: 0,
+          highestRemainingPercentage: 0,
+          lowestRemainingPercentage: 100,
+          earliestResetAt: null,
+          secondsToEarliestReset: null,
+          accounts: [],
+        });
+      }
+
+      const b = bucketMap.get(bucketKey);
+      b.totalAccounts++;
+      const pct = q.remainingPercentage ?? 0;
+      if (pct > 5) {
+        b.availableAccounts++;
+      } else {
+        b.exhaustedAccounts++;
+      }
+
+      if (pct > b.highestRemainingPercentage) b.highestRemainingPercentage = pct;
+      if (pct < b.lowestRemainingPercentage) b.lowestRemainingPercentage = pct;
+
+      if (q.resetAt) {
+        const qTime = new Date(q.resetAt).getTime();
+        if (!b.earliestResetAt || qTime < new Date(b.earliestResetAt).getTime()) {
+          b.earliestResetAt = q.resetAt;
+          b.secondsToEarliestReset = computeSecondsToReset(q.resetAt);
+        }
+      }
+
+      b.accounts.push({
+        accountId: acc.id,
+        accountName: acc.name,
+        email: acc.email,
+        provider: acc.provider,
+        providerLabel: acc.providerLabel,
+        remaining: q.remaining,
+        used: q.used,
+        total: q.total,
+        remainingPercentage: pct,
+        resetAt: q.resetAt,
+        secondsToReset: q.secondsToReset,
+        status: pct <= 5 ? "exhausted" : pct <= 30 ? "warning" : "active",
+      });
+    }
+  }
+
+  return Array.from(bucketMap.values()).map((b) => {
+    b.accounts.sort((a, c) => (c.remainingPercentage || 0) - (a.remainingPercentage || 0));
+    b.status =
+      b.availableAccounts === 0
+        ? "exhausted"
+        : b.availableAccounts < b.totalAccounts
+        ? "partial"
+        : "healthy";
+    return b;
+  });
+}
+
+/**
+ * Build consolidated summary across all accounts and quota buckets
  */
 export async function getQuotaSummary({ force = false } = {}) {
   const accounts = await getAllAccountsQuota({ force });
+  const quotaBuckets = aggregateByQuotaBuckets(accounts);
 
   let totalAccounts = accounts.length;
   let activeAccounts = 0;
@@ -185,6 +261,18 @@ export async function getQuotaSummary({ force = false } = {}) {
     }
   }
 
+  // Quota bucket metrics
+  let totalQuotaBuckets = quotaBuckets.length;
+  let healthyQuotaBuckets = 0;
+  let partialQuotaBuckets = 0;
+  let exhaustedQuotaBuckets = 0;
+
+  for (const b of quotaBuckets) {
+    if (b.status === "healthy") healthyQuotaBuckets++;
+    else if (b.status === "partial") partialQuotaBuckets++;
+    else if (b.status === "exhausted") exhaustedQuotaBuckets++;
+  }
+
   return {
     timestamp: new Date().toISOString(),
     totalAccounts,
@@ -192,7 +280,18 @@ export async function getQuotaSummary({ force = false } = {}) {
     exhaustedAccounts,
     warningAccounts,
     healthyAccounts,
-    systemStatus: exhaustedAccounts > 0 && activeAccounts === exhaustedAccounts ? "critical" : exhaustedAccounts > 0 ? "warning" : "healthy",
+    // Quota bucket totals
+    totalQuotaBuckets,
+    healthyQuotaBuckets,
+    partialQuotaBuckets,
+    exhaustedQuotaBuckets,
+    quotaBuckets,
+    systemStatus:
+      exhaustedAccounts > 0 && activeAccounts === exhaustedAccounts
+        ? "critical"
+        : exhaustedAccounts > 0
+        ? "warning"
+        : "healthy",
     earliestResetAt,
     secondsToEarliestReset: computeSecondsToReset(earliestResetAt),
   };

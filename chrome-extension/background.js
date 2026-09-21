@@ -68,7 +68,7 @@ async function fetchQuotaData(force = false) {
     }
 
     const summary = await summaryRes.json();
-    const accountsData = accountsRes.ok ? await accountsRes.json() : { accounts: [] };
+    const accountsData = accountsRes.ok ? await accountsRes.json() : { accounts: [], quotaBuckets: [] };
 
     // Previous accounts to check for state changes (notifications)
     const prevData = await chrome.storage.local.get(["accountsSummary"]);
@@ -77,6 +77,7 @@ async function fetchQuotaData(force = false) {
     await chrome.storage.local.set({
       summary,
       accounts: accountsData.accounts || [],
+      quotaBuckets: accountsData.quotaBuckets || summary.quotaBuckets || [],
       lastError: null,
       lastFetchedAt: Date.now(),
     });
