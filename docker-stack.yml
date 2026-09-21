@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  9router:
+    image: willianjack0/9router:latest
+    environment:
+      - DATA_DIR=/app/data
+      - PORT=20128
+      - HOSTNAME=0.0.0.0
+      - NODE_ENV=production
+      - AUTH_COOKIE_SECURE=true
+      - NEXT_PUBLIC_BASE_URL=https://apia.fishlab.com.br
+      - CLOUD_URL=https://apia.fishlab.com.br
+      - JWT_SECRET=gauze-qualm5-anemia-cupbearer
+      - INITIAL_PASSWORD=Tequila13@
+      - REQUIRE_API_KEY=true
+      - NINEROUTER_EXT_CORS_ORIGINS=*
+    volumes:
+      - 9router-data:/app/data
+    networks:
+      - v0net
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: any
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.9router.rule=Host(`apia.fishlab.com.br`)"
+        - "traefik.http.routers.9router.entrypoints=websecure"
+        - "traefik.http.routers.9router.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.9router.loadbalancer.server.port=20128"
+
+volumes:
+  9router-data:
+    external: true
+
+networks:
+  v0net:
+    external: true
