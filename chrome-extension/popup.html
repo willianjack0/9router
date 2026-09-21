@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>9router Quota Monitor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-area">
+        <div class="logo-badge">9</div>
+        <div class="title-group">
+          <h1>9router Quota</h1>
+          <span class="status-badge" id="connStatus">Connecting...</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="refreshBtn" title="Refresh Quota" class="icon-btn">
+          <svg class="icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+            <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+        </button>
+        <button id="optionsBtn" title="Settings" class="icon-btn">
+          <svg class="icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- KPI Summary Grid -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-label">Accounts</span>
+        <span class="kpi-val" id="kpiTotal">-</span>
+      </div>
+      <div class="kpi-card kpi-healthy">
+        <span class="kpi-label">Healthy</span>
+        <span class="kpi-val" id="kpiHealthy">-</span>
+      </div>
+      <div class="kpi-card kpi-warning">
+        <span class="kpi-label">Warning</span>
+        <span class="kpi-val" id="kpiWarning">-</span>
+      </div>
+      <div class="kpi-card kpi-exhausted">
+        <span class="kpi-label">Exhausted</span>
+        <span class="kpi-val" id="kpiExhausted">-</span>
+      </div>
+    </section>
+
+    <!-- Next Reset Alert Bar -->
+    <div class="reset-alert-bar" id="resetAlertBar" style="display: none;">
+      <span class="reset-icon">⏳</span>
+      <span class="reset-text" id="resetAlertText">Next reset in --</span>
+    </div>
+
+    <!-- Accounts List Header -->
+    <div class="section-title">
+      <span>Connected Accounts</span>
+      <span class="section-count" id="accountsCount">0</span>
+    </div>
+
+    <!-- Accounts Scroll Area -->
+    <main class="accounts-list" id="accountsList">
+      <div class="loading-state" id="loadingState">
+        <div class="spinner"></div>
+        <p>Loading accounts quota...</p>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span class="last-updated" id="lastUpdated">Updated: -</span>
+      <a href="#" id="openDashboardBtn" class="dashboard-link">Open Dashboard &rarr;</a>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
