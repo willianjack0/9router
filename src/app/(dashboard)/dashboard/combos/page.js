@@ -47,6 +47,58 @@ function normalizeCapEntry(entry) {
   return { ...EMPTY_CAP_ENTRY };
 }
 
+// Token Saver modules a combo can switch off (settings.comboStrategies[name].tokenSaverOff).
+const TOKEN_SAVER_MODULES = [
+  { key: "rtk", label: "RTK", desc: "Compress tool_result output" },
+  { key: "headroom", label: "Headroom", desc: "Context compression proxy" },
+  { key: "caveman", label: "Caveman", desc: "Terse-style system prompt" },
+  { key: "ponytail", label: "Ponytail", desc: "Lazy-senior-dev system prompt" },
+  { key: "customPrompt", label: "Custom prompt", desc: "User-authored instruction" },
+  { key: "pxpipe", label: "PXPIPE", desc: "Image bulky context" },
+];
+
+function TokenSaverModal({ isOpen, onClose, comboName, currentOff = [], onSave }) {
+  const [off, setOff] = useState(currentOff);
+  useEffect(() => { if (isOpen) setOff(currentOff); }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggle = (key, active) => setOff((prev) => (active ? prev.filter((k) => k !== key) : [...new Set([...prev, key])]));
+  const allOff = off.length === TOKEN_SAVER_MODULES.length;
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`Token Saver — ${comboName}`}
+      size="md"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={() => { onSave({ tokenSaverOff: off }); onClose(); }}>Save</Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <p className="text-xs text-text-muted">
+          Choose which Token Saver modules run for requests to this combo. A module also needs to be enabled globally in Token Saver settings; switching it off here only disables it for this combo.
+        </p>
+        <div className="flex gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setOff(allOff ? [] : TOKEN_SAVER_MODULES.map((m) => m.key))}>
+            {allOff ? "Enable all" : "Disable all"}
+          </Button>
+        </div>
+        {TOKEN_SAVER_MODULES.map((m) => (
+          <Toggle
+            key={m.key}
+            size="sm"
+            label={m.label}
+            description={m.desc}
+            checked={!off.includes(m.key)}
+            onChange={(v) => toggle(m.key, typeof v === "boolean" ? v : !!v?.target?.checked)}
+          />
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
@@ -343,7 +395,9 @@ export default function CombosPage() {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
       // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      const hasTokenSaverOff = Array.isArray(next.tokenSaverOff) && next.tokenSaverOff.length > 0;
+      if (!hasTokenSaverOff) delete next.tokenSaverOff;
+      if ((!next.fallbackStrategy || next.fallbackStrategy === "fallback") && !hasTokenSaverOff) {
         delete updated[comboName];
       } else {
         updated[comboName] = next;
@@ -362,7 +416,9 @@ export default function CombosPage() {
       const updated = { ...comboStrategies };
       for (const combo of selectedCombos) {
         if (!strategy || strategy === "fallback") {
-          delete updated[combo.name];
+          const keep = updated[combo.name]?.tokenSaverOff;
+          if (keep?.length) updated[combo.name] = { tokenSaverOff: keep };
+          else delete updated[combo.name];
         } else {
           updated[combo.name] = {
             ...(updated[combo.name] || {}),
@@ -659,6 +715,8 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showRouterSelect, setShowRouterSelect] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [showTokenSaver, setShowTokenSaver] = useState(false);
+  const tokenSaverOff = Array.isArray(strategy.tokenSaverOff) ? strategy.tokenSaverOff : [];
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const routerModel = strategy.routerModel || "";
@@ -801,7 +859,15 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={(e) => { e.stopPropagation(); setShowTokenSaver(true); }}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${tokenSaverOff.length ? "text-amber-500" : "text-text-muted hover:text-primary"}`}
+              title={tokenSaverOff.length ? `Token Saver: ${tokenSaverOff.length} module(s) disabled for this combo` : "Token Saver modules for this combo"}
+            >
+              <span className="material-symbols-outlined text-[18px]">{tokenSaverOff.length ? "toggle_off" : "compress"}</span>
+              <span className="text-[10px] leading-tight">{tokenSaverOff.length ? `Saver −${tokenSaverOff.length}` : "Saver"}</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -858,6 +924,14 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           closeOnSelect={true}
         />
       )}
+
+      <TokenSaverModal
+        isOpen={showTokenSaver}
+        onClose={() => setShowTokenSaver(false)}
+        comboName={combo.name}
+        currentOff={tokenSaverOff}
+        onSave={onSetStrategy}
+      />
 
       {/* Smart Router Policy Settings Modal */}
       {showPolicyModal && (

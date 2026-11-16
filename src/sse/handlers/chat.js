@@ -29,6 +29,18 @@ import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
 
+// Token-saver modules a combo may opt out of (settings.comboStrategies[name].tokenSaverOff).
+const TOKEN_SAVER_MODULES = ["rtk", "headroom", "caveman", "ponytail", "customPrompt", "pxpipe"];
+
+// Return a request carrier whose `tokenSaverOff` is the union of what the outer
+// request already disabled and what this combo disables, so nested combos stack.
+function withComboTokenSaver(clientRawRequest, comboCfg) {
+  const off = Array.isArray(comboCfg?.tokenSaverOff) ? comboCfg.tokenSaverOff.filter((m) => TOKEN_SAVER_MODULES.includes(m)) : [];
+  if (off.length === 0) return clientRawRequest;
+  const merged = [...new Set([...(clientRawRequest?.tokenSaverOff || []), ...off])];
+  return { ...(clientRawRequest || {}), tokenSaverOff: merged };
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -118,14 +130,15 @@ export async function handleChat(request, clientRawRequest = null) {
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+      const fusionRawRequest = withComboTokenSaver(clientRawRequest, comboStrategies[modelStr]);
       return handleFusionChat({
         body,
         models: comboModels,
         handleSingleModel: (b, m, isPanel) => {
-          let cleanRawReq = clientRawRequest;
-          if (isPanel && clientRawRequest) {
-            const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-            cleanRawReq = { ...clientRawRequest, body: cleanBody };
+          let cleanRawReq = fusionRawRequest;
+          if (isPanel && fusionRawRequest) {
+            const { tools, tool_choice, ...cleanBody } = fusionRawRequest.body || {};
+            cleanRawReq = { ...fusionRawRequest, body: cleanBody };
           }
           return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
         },
@@ -138,12 +151,13 @@ export async function handleChat(request, clientRawRequest = null) {
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     const comboCfg = comboStrategies[modelStr] || {};
+    const comboRawRequest = withComboTokenSaver(clientRawRequest, comboCfg);
     log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, comboRawRequest, request, apiKey),
         adapterAdded
       ),
       log,
@@ -211,14 +225,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
+        const fusionRawRequest = withComboTokenSaver(clientRawRequest, comboStrategies[modelStr]);
         return handleFusionChat({
           body,
           models: comboModels,
           handleSingleModel: (b, m, isPanel) => {
-            let cleanRawReq = clientRawRequest;
-            if (isPanel && clientRawRequest) {
-              const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-              cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            let cleanRawReq = fusionRawRequest;
+            if (isPanel && fusionRawRequest) {
+              const { tools, tool_choice, ...cleanBody } = fusionRawRequest.body || {};
+              cleanRawReq = { ...fusionRawRequest, body: cleanBody };
             }
             return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
           },
@@ -231,6 +246,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       const comboCfg = comboStrategies[modelStr] || {};
+      const comboRawRequest = withComboTokenSaver(clientRawRequest, comboCfg);
       const nestedSession = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
       const nestedSessionId = nestedSession?.sessionId || null;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
@@ -238,7 +254,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, comboRawRequest, request, apiKey),
           adapterAdded
         ),
         log,
@@ -311,6 +327,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    // Modules the enclosing combo(s) switched off (Combos → Token Saver)
+    const tsOff = new Set(clientRawRequest?.tokenSaverOff || []);
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -321,22 +339,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       userAgent,
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
+      rtkEnabled: !tsOff.has("rtk") && !!chatSettings.rtkEnabled,
+      headroomEnabled: !tsOff.has("headroom") && !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
       headroomTimeoutMs: chatSettings.headroomTimeoutMs,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
+      cavemanEnabled: !tsOff.has("caveman") && !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
+      ponytailEnabled: !tsOff.has("ponytail") && !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
-      customPromptEnabled: !!chatSettings.customPromptEnabled,
+      customPromptEnabled: !tsOff.has("customPrompt") && !!chatSettings.customPromptEnabled,
       customPrompt: chatSettings.customPrompt || "",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+      pxpipeEnabled: !tsOff.has("pxpipe") && !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
       // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+      pxpipeTransform: !tsOff.has("pxpipe") && chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
       // Per-provider user overrides (custom headers / connect timeout) from settings
