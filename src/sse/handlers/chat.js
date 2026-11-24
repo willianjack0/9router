@@ -350,6 +350,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ponytailLevel: chatSettings.ponytailLevel || "full",
       customPromptEnabled: !tsOff.has("customPrompt") && !!chatSettings.customPromptEnabled,
       customPrompt: chatSettings.customPrompt || "",
+      reaAllowEnabled: !!chatSettings.reaAllowEnabled,
       pxpipeEnabled: !tsOff.has("pxpipe") && !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
